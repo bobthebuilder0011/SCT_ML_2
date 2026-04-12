@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Customer Segmentation - K-Means & PCA</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .glass {
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s ease;
+        }
+        .glass-card:hover {
+            background: rgba(30, 41, 59, 0.8);
+            transform: translateY(-2px);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+        .chart-container {
+            min-height: 500px;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, #22d3ee 0%, #a855f7 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .active-tab {
+            border-bottom: 2px solid #22d3ee;
+            color: #22d3ee;
+        }
+    </style>
+</head>
+<body class="bg-[#0f172a] min-h-screen text-slate-200 custom-scrollbar">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
+            <div class="text-center md:text-left">
+                <h1 class="text-4xl font-extrabold mb-2 gradient-text">
+                    ClusterCraft AI
+                </h1>
+                <p class="text-slate-400">Advanced Customer Segmentation & Dimensionality Reduction</p>
+            </div>
+            
+            <div class="flex flex-wrap gap-4">
+                <div class="relative">
+                    <input type="file" id="file-upload" class="hidden" accept=".csv">
+                    <label for="file-upload" class="cursor-pointer bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 border border-slate-700 transition-all">
+                        <i class="fas fa-upload text-cyan-400"></i>
+                        <span>Upload Dataset</span>
+                    </label>
+                </div>
+                <div class="bg-slate-800 px-4 py-2 rounded-lg flex items-center gap-2 border border-slate-700">
+                    <i class="fas fa-database text-purple-400"></i>
+                    <span id="current-dataset">Mall_Customers.csv</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Stats Overview -->
+        <div id="stats-summary" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <!-- Dynamic stats will be injected here -->
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <!-- Sidebar Controls -->
+            <div class="lg:col-span-3 space-y-6">
+                <div class="glass rounded-2xl p-6 shadow-xl">
+                    <h3 class="text-lg font-semibold mb-6 flex items-center gap-2">
+                        <i class="fas fa-sliders-h text-cyan-400"></i>
+                        Configuration
+                    </h3>
+                    
+                    <div class="space-y-6">
+                        <div>
+                            <div class="flex justify-between mb-2">
+                                <label class="text-sm text-slate-400">Clusters (K)</label>
+                                <span id="k-value-display" class="text-cyan-400 font-bold">5</span>
+                            </div>
+                            <input type="range" id="k-slider" min="2" max="10" value="5" class="w-full accent-cyan-400 bg-slate-700 rounded-lg appearance-none h-2 cursor-pointer">
+                        </div>
+
+                        <button id="run-analysis" class="w-full bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2">
+                            <i class="fas fa-microchip"></i>
+                            Run Analysis
+                        </button>
+                    </div>
+                </div>
+
+                <div class="glass rounded-2xl p-6 shadow-xl">
+                    <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i class="fas fa-chart-line text-purple-400"></i>
+                        Metrics
+                    </h3>
+                    <div class="space-y-4">
+                        <div class="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
+                            <div class="text-xs text-slate-500 uppercase tracking-wider mb-1">Silhouette Score</div>
+                            <div id="silhouette-val" class="text-2xl font-bold text-green-400">0.0000</div>
+                            <div class="w-full bg-slate-700 h-1.5 mt-2 rounded-full">
+                                <div id="silhouette-bar" class="bg-green-500 h-full rounded-full transition-all duration-1000" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
+                            <div class="text-xs text-slate-500 uppercase tracking-wider mb-1">Inertia (WCSS)</div>
+                            <div id="inertia-val" class="text-2xl font-bold text-yellow-400">0.00</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="lg:col-span-9 space-y-8">
+                <!-- Visualizations -->
+                <div class="glass rounded-2xl p-6 shadow-xl">
+                    <div class="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
+                        <div class="flex gap-6">
+                            <button onclick="switchTab('cluster-2d')" class="tab-btn active-tab pb-2 font-medium transition-all" id="tab-2d">PCA 2D View</button>
+                            <button onclick="switchTab('cluster-3d')" class="tab-btn text-slate-500 pb-2 font-medium transition-all" id="tab-3d">PCA 3D View</button>
+                            <button onclick="switchTab('elbow')" class="tab-btn text-slate-500 pb-2 font-medium transition-all" id="tab-elbow">Elbow Method</button>
+                        </div>
+                    </div>
+
+                    <div id="viz-container" class="chart-container">
+                        <div id="chart-main" class="w-full h-full"></div>
+                    </div>
+                </div>
+
+                <!-- Cluster Details -->
+                <div id="cluster-cards" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    <!-- Dynamic cluster cards -->
+                </div>
+
+                <!-- Data Table -->
+                <div class="glass rounded-2xl p-6 shadow-xl">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-xl font-bold flex items-center gap-2">
+                            <i class="fas fa-table text-green-400"></i>
+                            Clustered Data
+                        </h3>
+                        <div class="flex gap-2">
+                            <input type="text" id="table-search" placeholder="Search customers..." class="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-cyan-500">
+                        </div>
+                    </div>
+                    
+                    <div class="overflow-x-auto custom-scrollbar">
+                        <table class="w-full text-left">
+                            <thead>
+                                <tr class="text-slate-500 text-sm uppercase tracking-wider border-b border-slate-800">
+                                    <th class="px-4 py-3 font-medium">Customer</th>
+                                    <th id="dynamic-headers" colspan="10" class="px-4 py-3 font-medium">Features</th>
+                                    <th class="px-4 py-3 font-medium">Segment</th>
+                                </tr>
+                            </thead>
+                            <tbody id="data-table-body" class="divide-y divide-slate-800">
+                                <!-- Data rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div id="notification" class="fixed bottom-8 right-8 transform translate-y-20 opacity-0 transition-all duration-300 bg-slate-800 border border-slate-700 px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 z-50">
+        <div id="notif-icon" class="w-10 h-10 rounded-full flex items-center justify-center text-xl"></div>
+        <div>
+            <div id="notif-title" class="font-bold"></div>
+            <div id="notif-msg" class="text-sm text-slate-400"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentData = null;
+        let lastAnalysis = null;
+        let currentTab = 'cluster-2d';
+
+        // --- Core Functions ---
+
+        async function init() {
+            await updateStats();
+            await loadElbowData();
+            await runAnalysis();
+        }
+
+        async function updateStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const stats = await res.json();
+                
+                const container = document.getElementById('stats-summary');
+                container.innerHTML = `
+                    <div class="glass-card rounded-2xl p-5 border-l-4 border-cyan-500">
+                        <div class="text-slate-400 text-sm mb-1 uppercase tracking-tight">Total Records</div>
+                        <div class="text-3xl font-bold">${stats.total_customers}</div>
+                    </div>
+                `;
+
+                // Add up to 3 numeric stats
+                Object.entries(stats.numeric_stats).slice(0, 3).forEach(([name, data]) => {
+                    container.innerHTML += `
+                        <div class="glass-card rounded-2xl p-5 border-l-4 border-purple-500">
+                            <div class="text-slate-400 text-sm mb-1 uppercase tracking-tight">Avg ${name}</div>
+                            <div class="text-3xl font-bold">${data.mean}</div>
+                        </div>
+                    `;
+                });
+            } catch (err) {
+                showNotification('Error', 'Failed to fetch dataset stats', 'error');
+            }
+        }
+
+        async function runAnalysis() {
+            const k = document.getElementById('k-slider').value;
+            const btn = document.getElementById('run-analysis');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/cluster', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ n_clusters: k })
+                });
+                const data = await res.json();
+                lastAnalysis = data;
+                
+                updateMetrics(data);
+                renderCurrentView();
+                renderClusterCards(data);
+                renderTable(data);
+                
+                showNotification('Success', `Clustering completed with ${k} segments`, 'success');
+            } catch (err) {
+                showNotification('Error', 'Analysis failed', 'error');
+            } finally {
+                btn.innerHTML = '<i class="fas fa-microchip"></i> Run Analysis';
+                btn.disabled = false;
+            }
+        }
+
+        async function loadElbowData() {
+            try {
+                const res = await fetch('/api/elbow');
+                const data = await res.json();
+                window.elbowData = data;
+            } catch (err) {}
+        }
+
+        // --- UI Updates ---
+
+        function updateMetrics(data) {
+            const sVal = document.getElementById('silhouette-val');
+            const sBar = document.getElementById('silhouette-bar');
+            sVal.textContent = data.silhouette_score.toFixed(4);
+            sBar.style.width = `${Math.max(0, data.silhouette_score * 100)}%`;
+            
+            document.getElementById('inertia-val').textContent = data.inertia.toLocaleString();
+        }
+
+        function renderCurrentView() {
+            if (!lastAnalysis) return;
+            
+            if (currentTab === 'cluster-2d') {
+                render2D(lastAnalysis);
+            } else if (currentTab === 'cluster-3d') {
+                render3D(lastAnalysis);
+            } else if (currentTab === 'elbow') {
+                renderElbow(window.elbowData);
+            }
+        }
+
+        function render2D(data) {
+            const traces = data.clusters.map(cluster => ({
+                x: cluster.customers.map(c => c.pca_x),
+                y: cluster.customers.map(c => c.pca_y),
+                mode: 'markers',
+                type: 'scatter',
+                name: cluster.name,
+                marker: { 
+                    size: 10, 
+                    color: cluster.color,
+                    line: { color: 'rgba(255,255,255,0.2)', width: 1 }
+                },
+                text: cluster.customers.map(c => `ID: ${c.CustomerID || 'N/A'}`),
+                hovertemplate: '<b>%{text}</b><br>PCA X: %{x:.2f}<br>PCA Y: %{y:.2f}<extra></extra>'
+            }));
+
+            const layout = getBaseLayout('PCA Components (2D projection)');
+            Plotly.newPlot('chart-main', traces, layout, {responsive: true, displayModeBar: false});
+        }
+
+        function render3D(data) {
+            const traces = data.clusters.map(cluster => ({
+                x: cluster.customers.map(c => c.pca_3d_x),
+                y: cluster.customers.map(c => c.pca_3d_y),
+                z: cluster.customers.map(c => c.pca_3d_z),
+                mode: 'markers',
+                type: 'scatter3d',
+                name: cluster.name,
+                marker: { 
+                    size: 6, 
+                    color: cluster.color,
+                    opacity: 0.8
+                },
+                text: cluster.customers.map(c => `ID: ${c.CustomerID || 'N/A'}`),
+                hovertemplate: '<b>%{text}</b><br>X: %{x:.2f}<br>Y: %{y:.2f}<br>Z: %{z:.2f}<extra></extra>'
+            }));
+
+            const layout = getBaseLayout('PCA Components (3D projection)');
+            layout.scene = {
+                xaxis: { title: 'PCA 1', gridcolor: 'rgba(255,255,255,0.1)', backgroundcolor: 'transparent' },
+                yaxis: { title: 'PCA 2', gridcolor: 'rgba(255,255,255,0.1)', backgroundcolor: 'transparent' },
+                zaxis: { title: 'PCA 3', gridcolor: 'rgba(255,255,255,0.1)', backgroundcolor: 'transparent' },
+                bgcolor: 'transparent'
+            };
+
+            Plotly.newPlot('chart-main', traces, layout, {responsive: true, displayModeBar: false});
+        }
+
+        function renderElbow(data) {
+            if (!data) return;
+            const trace1 = {
+                x: data.k_values,
+                y: data.inertias,
+                name: 'Inertia',
+                type: 'scatter',
+                mode: 'lines+markers',
+                line: { color: '#22d3ee', shape: 'spline' }
+            };
+            const trace2 = {
+                x: data.k_values,
+                y: data.silhouette_scores,
+                name: 'Silhouette',
+                type: 'scatter',
+                mode: 'lines+markers',
+                yaxis: 'y2',
+                line: { color: '#a855f7', shape: 'spline' }
+            };
+
+            const layout = getBaseLayout('Elbow & Silhouette Method');
+            layout.yaxis.title = 'Inertia (Lower is better)';
+            layout.yaxis2 = {
+                title: 'Silhouette (Higher is better)',
+                overlaying: 'y',
+                side: 'right',
+                gridcolor: 'transparent'
+            };
+
+            Plotly.newPlot('chart-main', [trace1, trace2], layout, {responsive: true, displayModeBar: false});
+        }
+
+        function getBaseLayout(title) {
+            return {
+                title: { text: title, font: { color: '#94a3b8', size: 14 } },
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                font: { color: '#cbd5e1' },
+                margin: { t: 40, r: 40, b: 40, l: 40 },
+                xaxis: { gridcolor: 'rgba(255,255,255,0.05)', zerolinecolor: 'rgba(255,255,255,0.1)' },
+                yaxis: { gridcolor: 'rgba(255,255,255,0.05)', zerolinecolor: 'rgba(255,255,255,0.1)' },
+                legend: { bgcolor: 'transparent', bordercolor: 'transparent' }
+            };
+        }
+
+        function renderClusterCards(data) {
+            const container = document.getElementById('cluster-cards');
+            container.innerHTML = '';
+            
+            data.clusters.forEach(cluster => {
+                const card = document.createElement('div');
+                card.className = 'glass-card rounded-2xl p-5 border-t-4 shadow-lg';
+                card.style.borderColor = cluster.color;
+                
+                let statsHtml = '';
+                data.features.slice(0, 3).forEach(feat => {
+                    statsHtml += `
+                        <div class="flex justify-between text-sm py-1 border-b border-slate-800/50">
+                            <span class="text-slate-500">${feat}</span>
+                            <span class="font-medium">${cluster['avg_'+feat]}</span>
+                        </div>
+                    `;
+                });
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-4">
+                        <h4 class="font-bold text-lg" style="color: ${cluster.color}">${cluster.name}</h4>
+                        <span class="bg-slate-800 text-xs px-2 py-1 rounded-full text-slate-400">${cluster.count} members</span>
+                    </div>
+                    <div class="space-y-1">
+                        ${statsHtml}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('data-table-body');
+            const headers = data.features.slice(0, 4);
+            
+            // Update dynamic headers
+            const headerRow = document.getElementById('dynamic-headers');
+            headerRow.textContent = `Features (${headers.join(', ')})`;
+            
+            tbody.innerHTML = '';
+            
+            // Show only first 50 for performance
+            let count = 0;
+            data.clusters.forEach(cluster => {
+                cluster.customers.slice(0, 20).forEach(customer => {
+                    if (count++ > 50) return;
+                    
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-slate-800/30 transition-colors group';
+                    
+                    let featuresHtml = '';
+                    headers.forEach(h => {
+                        featuresHtml += `<td class="px-4 py-3 text-sm text-slate-400">${customer[h]}</td>`;
+                    });
+
+                    row.innerHTML = `
+                        <td class="px-4 py-3">
+                            <div class="font-medium">#${customer.CustomerID || '??'}</div>
+                            <div class="text-xs text-slate-600">${customer.Gender || 'N/A'}</div>
+                        </td>
+                        ${featuresHtml}
+                        <td class="px-4 py-3">
+                            <span class="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider" 
+                                  style="background-color: ${cluster.color}20; color: ${cluster.color}; border: 1px solid ${cluster.color}40">
+                                ${cluster.name}
+                            </span>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            });
+        }
+
+        // --- Event Handlers ---
+
+        function switchTab(tabId) {
+            currentTab = tabId;
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active-tab');
+                btn.classList.add('text-slate-500');
+            });
+            
+            const tabBtnId = tabId === 'cluster-2d' ? 'tab-2d' : (tabId === 'cluster-3d' ? 'tab-3d' : 'tab-elbow');
+            const activeBtn = document.getElementById(tabBtnId);
+            activeBtn.classList.add('active-tab');
+            activeBtn.classList.remove('text-slate-500');
+            
+            renderCurrentView();
+        }
+
+        document.getElementById('k-slider').addEventListener('input', (e) => {
+            document.getElementById('k-value-display').textContent = e.target.value;
+        });
+
+        document.getElementById('run-analysis').addEventListener('click', runAnalysis);
+
+        document.getElementById('file-upload').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                
+                if (data.error) throw new Error(data.error);
+                
+                document.getElementById('current-dataset').textContent = file.name;
+                showNotification('Upload Successful', `Loaded ${data.rows} records with ${data.features.length} features`, 'success');
+                
+                await init();
+            } catch (err) {
+                showNotification('Upload Failed', err.message, 'error');
+            }
+        });
+
+        function showNotification(title, msg, type) {
+            const notif = document.getElementById('notification');
+            const icon = document.getElementById('notif-icon');
+            const titleEl = document.getElementById('notif-title');
+            const msgEl = document.getElementById('notif-msg');
+            
+            titleEl.textContent = title;
+            msgEl.textContent = msg;
+            
+            if (type === 'success') {
+                icon.className = 'w-10 h-10 rounded-full flex items-center justify-center text-xl bg-green-500/20 text-green-500';
+                icon.innerHTML = '<i class="fas fa-check-circle"></i>';
+            } else {
+                icon.className = 'w-10 h-10 rounded-full flex items-center justify-center text-xl bg-red-500/20 text-red-500';
+                icon.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+            }
+            
+            notif.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                notif.classList.add('translate-y-20', 'opacity-0');
+            }, 4000);
+        }
+
+        // --- Initialize ---
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
